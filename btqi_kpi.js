@@ -12,45 +12,57 @@ looker.plugins.visualizations.add({
         qr.fields.measure_like.concat(qr.fields.dimension_like)
           .reduce((o,f)=> (o[f.name]=f.label || f.name, o), {}),
       default: ""
+    },
+    show_header: {
+      section: "Appearance",
+      label: "Show Internal Title",
+      type: "boolean",
+      default: false
+    },
+    header_text: {
+      section: "Appearance",
+      label: "Internal Title Text",
+      type: "string",
+      default: "Traffic Quality Score"
+    },
+    fill_mode: {
+      section: "Appearance",
+      label: "Background Fill",
+      type: "string",
+      display: "select",
+      values: [{ "Solid band color": "solid" }, { "Subtle tint": "tint" }],
+      default: "solid"
     }
   },
 
   create: function (element, config) {
     element.innerHTML = `
       <style>
-        /* Root card fills the tile, rounded, premium spacing */
+        .btqi-wrap { width:100%; height:100%; }
+        .btqi-header{
+          font-weight:700; letter-spacing:.2px; text-align:center;
+          margin: 6px 0 12px 0; opacity:.9;
+        }
         .btqi-card{
-          position:relative; width:100%; height:100%;
+          position:relative; width:100%; height:calc(100% - 28px);
           box-sizing:border-box;
           border-radius:16px; padding:28px 32px;
           display:flex; flex-direction:column; align-items:center; justify-content:center;
-          /* background set dynamically */
         }
         .btqi-value{
           font-size: clamp(40px, 8vw, 64px);
           line-height:1; font-weight:800; letter-spacing:.3px;
           margin-bottom:10px;
         }
-        .btqi-band{
-          display:inline-flex; align-items:center; gap:10px;
-          font-size:18px; font-weight:600;
-          backdrop-filter: saturate(120%);
-        }
-        .dot{width:12px; height:12px; border-radius:50%; border:2px solid rgba(0,0,0,.18)}
-        /* subtle ambient shadow for “card within a tile” look */
-        .btqi-card:after{
-          content:""; position:absolute; inset:0;
-          box-shadow:0 10px 24px rgba(0,0,0,.10);
-          border-radius:16px; pointer-events:none;
-        }
-        /* tooltip */
-        .info{position:absolute; top:12px; right:12px; cursor:default;}
+        .btqi-band{ display:inline-flex; align-items:center; gap:10px; font-size:18px; font-weight:600; }
+        .dot{ width:12px; height:12px; border-radius:50%; border:2px solid rgba(0,0,0,.18) }
+        .info{ position:absolute; top:12px; right:12px; cursor:default; }
         .info .bubble{
           display:none; position:absolute; right:0; top:26px; width:300px;
           background:#111827; color:#fff; border-radius:10px; padding:12px 14px;
           box-shadow:0 16px 36px rgba(0,0,0,.25); z-index:5; font-size:13px; line-height:1.35;
         }
-        .info:hover .bubble{display:block;}
+        .info:hover .bubble{ display:block; }
         .info .i{
           width:22px; height:22px; border-radius:50%;
           background:rgba(255,255,255,.85); color:#111827;
@@ -60,15 +72,18 @@ looker.plugins.visualizations.add({
         }
       </style>
 
-      <div class="btqi-card" aria-label="Traffic Quality Score card">
-        <div class="info" aria-hidden="true">
-          <div class="i">i</div>
-          <div class="bubble" id="btqi-tip"></div>
-        </div>
-        <div class="btqi-value" id="btqi-value">–</div>
-        <div class="btqi-band" id="btqi-band">
-          <div class="dot" id="btqi-dot"></div>
-          <div id="btqi-label">–</div>
+      <div class="btqi-wrap">
+        <div class="btqi-header" id="btqi-header" style="display:none;"></div>
+        <div class="btqi-card" aria-label="Traffic Quality Score card">
+          <div class="info" aria-hidden="true">
+            <div class="i">i</div>
+            <div class="bubble" id="btqi-tip"></div>
+          </div>
+          <div class="btqi-value" id="btqi-value">–</div>
+          <div class="btqi-band" id="btqi-band">
+            <div class="dot" id="btqi-dot"></div>
+            <div id="btqi-label">–</div>
+          </div>
         </div>
       </div>
     `;
@@ -94,7 +109,7 @@ looker.plugins.visualizations.add({
       };
       const b = band(v);
 
-      // utilities for contrast
+      // utils
       const hexToRgb = (hex) => {
         const h = hex.replace('#','');
         const int = parseInt(h.length===3 ? h.split('').map(c=>c+c).join('') : h, 16);
@@ -105,8 +120,16 @@ looker.plugins.visualizations.add({
         return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
       };
       const getContrastText = (hex) => luminance(hexToRgb(hex)) > 0.6 ? "#111827" : "#ffffff";
+      const mix = (hex, pct=0.85) => { // lighten toward white
+        const {r,g,b}=hexToRgb(hex);
+        const m=(c)=>Math.round(c+(255-c)*pct);
+        const toHex=(n)=>n.toString(16).padStart(2,"0");
+        return `#${toHex(m(r))}${toHex(m(g))}${toHex(m(b))}`;
+      };
 
-      // apply UI
+      // elements
+      const wrap  = element.querySelector(".btqi-wrap");
+      const header= element.querySelector("#btqi-header");
       const card  = element.querySelector(".btqi-card");
       const value = element.querySelector("#btqi-value");
       const dot   = element.querySelector("#btqi-dot");
@@ -114,20 +137,24 @@ looker.plugins.visualizations.add({
       const tip   = element.querySelector("#btqi-tip");
       const bandRow = element.querySelector("#btqi-band");
 
-      // full-bleed solid background + auto text contrast
-      const textColor = getContrastText(b.color);
-      card.style.background = b.color;
-      card.style.color = textColor;
-      // dot outline flips on dark backgrounds for clarity
-      dot.style.borderColor = textColor === "#ffffff" ? "rgba(255,255,255,.65)" : "rgba(0,0,0,.18)";
+      // header toggle
+      header.style.display = config.show_header ? "block" : "none";
+      header.textContent   = config.header_text || "Traffic Quality Score";
+
+      // fill style
+      const mode = (config.fill_mode || "solid");
+      const bg   = mode === "solid" ? b.color : mix(b.color, 0.88); // subtle tint option
+      const text = getContrastText(bg);
+
+      // apply
+      card.style.background = bg;
+      card.style.color = text;
+      dot.style.borderColor = text === "#ffffff" ? "rgba(255,255,255,.65)" : "rgba(0,0,0,.18)";
+      dot.style.background  = text === "#ffffff" ? "rgba(255,255,255,.92)" : b.color;
+      bandRow.style.color   = text;
 
       value.textContent = (v==null ? "–" : v.toFixed(1));
-      dot.style.background = textColor === "#ffffff" ? "rgba(255,255,255,.92)" : b.color; // small accent
       label.textContent = `${b.name} Traffic Quality`;
-
-      // ensure the band text inherits contrast color
-      bandRow.style.color = textColor;
-
       tip.innerHTML = `<b>BTQI (0–10)</b><br/>
         Calculated from <i>Leads per Session × (Engagement ÷ Bounce)</i> and scaled so “Excellent” is rare and meaningful.<br/><br/>
         <b>Band:</b> ${b.name}<br/>${b.desc}`;
