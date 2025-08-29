@@ -43,12 +43,20 @@ looker.plugins.visualizations.add({
           font-weight:700; letter-spacing:.2px; text-align:center;
           margin: 6px 0 12px 0; opacity:.9;
         }
-        .btqi-card{
-          position:relative; width:100%; height:calc(100% - 28px);
-          box-sizing:border-box;
-          border-radius:16px; padding:28px 32px;
-          display:flex; flex-direction:column; align-items:center; justify-content:center;
-        }
+        .btqi-card {
+  position: absolute; 
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100%; height: 100%;
+  box-sizing: border-box;
+  display: flex; 
+  flex-direction: column; 
+  align-items: center; 
+  justify-content: center;
+
+  /* Remove padding and rounded corners so it fills tile */
+  border-radius: 0; 
+  padding: 0;
+}
         .btqi-value{
           font-size: clamp(40px, 8vw, 64px);
           line-height:1; font-weight:800; letter-spacing:.3px;
