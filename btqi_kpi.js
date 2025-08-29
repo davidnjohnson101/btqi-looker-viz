@@ -257,7 +257,7 @@ looker.plugins.visualizations.add({
       valueEl.textContent = (v==null ? "–" : v.toFixed(1));
 
       tip.innerHTML = `<b>BTQI (0–10)</b><br/>
-        Calculated from <i>Leads per Session × (Engagement ÷ Bounce)</i> and scaled so “Excellent” is rare and meaningful.<br/><br/>
+        Calculated from <i>Leads per Session × (Engagement ÷ Bounce).</i><br/><br/>
         <b>Band:</b> ${b.name}<br/>${b.desc}`;
 
       // place/flip tooltip after render
