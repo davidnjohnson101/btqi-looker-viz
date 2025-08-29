@@ -1,4 +1,4 @@
-// btqi_kpi.js  — Full-bleed KPI with robust options
+// btqi_kpi.js  — Full-bleed KPI with robust options + improved tooltip (left, wide, smart flip)
 looker.plugins.visualizations.add({
   id: "btqi_kpi",
   label: "BTQI KPI",
@@ -77,16 +77,14 @@ looker.plugins.visualizations.add({
   create: function (element, config) {
     element.innerHTML = `
       <style>
-        /* Make the viz fill the iframe */
         .btqi-root { position:absolute; inset:0; width:100%; height:100%; }
 
-        /* Optional internal header (since native title toggle may be missing) */
         .btqi-header{
           font-weight:700; letter-spacing:.2px; text-align:center;
           margin: 4px 0 8px 0; opacity:.9;
         }
 
-        /* Full-bleed card fills the whole tile */
+        /* Full-bleed card */
         .btqi-card{
           position:absolute; inset:0;
           width:100%; height:100%;
@@ -98,9 +96,8 @@ looker.plugins.visualizations.add({
           display:flex; flex-direction:column; align-items:center; gap:10px;
         }
         .btqi-inner.left { align-items:flex-start; padding-left:24px; }
-        .value{
-          line-height:1; font-weight:800; letter-spacing:.3px; margin:0;
-        }
+
+        .value{ line-height:1; font-weight:800; letter-spacing:.3px; margin:0; }
         .value.s { font-size: clamp(36px, 6vw, 48px); }
         .value.m { font-size: clamp(44px, 7.5vw, 64px); }
         .value.l { font-size: clamp(52px, 9vw, 80px); }
@@ -110,26 +107,27 @@ looker.plugins.visualizations.add({
           font-size:18px; font-weight:700;
         }
 
-        /* glossy dot (works on any background) */
+        /* glossy dot */
         .dot{
           width:14px; height:14px; border-radius:50%;
           box-shadow: inset 0 2px 3px rgba(0,0,0,.15), 0 0 0 2px rgba(0,0,0,.12);
-          background: radial-gradient( 100% 100% at 35% 30%, rgba(255,255,255,.9), rgba(255,255,255,.1) 45%), #999;
+          background: radial-gradient(100% 100% at 35% 30%, rgba(255,255,255,.9), rgba(255,255,255,.1) 45%), #999;
         }
 
-        /* Tooltip with mobile tap support (see JS) */
-        .info{ position:absolute; top:10px; right:10px; }
+        /* === Tooltip (moved left, wider, on top, internal scroll if needed) === */
+        .info{ position:absolute; top:10px; left:10px; z-index:9999; }
         .info .i{
           width:22px; height:22px; border-radius:50%;
-          background:rgba(255,255,255,.85); color:#111827;
+          background:rgba(255,255,255,.9); color:#111827;
           display:flex; align-items:center; justify-content:center;
           font-size:12px; font-weight:800;
           box-shadow:0 2px 6px rgba(0,0,0,.15); cursor:default;
         }
         .bubble{
-          display:none; position:absolute; right:0; top:28px; width:310px;
+          display:none; position:absolute; left:0; top:28px;
+          width:420px; max-width:calc(100vw - 64px); max-height:60vh; overflow:auto;
           background:#111827; color:#fff; border-radius:10px; padding:12px 14px;
-          box-shadow:0 16px 36px rgba(0,0,0,.25); z-index:5; font-size:13px; line-height:1.35;
+          box-shadow:0 16px 36px rgba(0,0,0,.25); font-size:13px; line-height:1.35;
         }
         .info.open .bubble { display:block; }
       </style>
@@ -152,14 +150,35 @@ looker.plugins.visualizations.add({
       </div>
     `;
 
-    // Mobile-friendly tooltip: click to toggle
+    // Tooltip toggle (click/tap)
     const info = element.querySelector("#btqi-info");
     info.addEventListener("click", (e) => {
       e.stopPropagation();
       info.classList.toggle("open");
     });
-    // Close on outside click
     document.addEventListener("click", () => info.classList.remove("open"));
+
+    // Smart placement: flip to the right side if not enough room on the left
+    const placeTooltip = () => {
+      try {
+        const cardRect = element.querySelector("#btqi-card").getBoundingClientRect();
+        const infoRect = info.getBoundingClientRect();
+        const bubble   = element.querySelector("#btqi-tip");
+
+        // default left
+        info.style.left = "10px";  info.style.right = "auto";
+        bubble.style.left = "0";   bubble.style.right = "auto";
+
+        const spaceRight = cardRect.right - infoRect.left;
+        if (spaceRight < 460) { // need ~420px bubble + padding
+          info.style.left = "auto";  info.style.right = "10px";
+          bubble.style.left = "auto"; bubble.style.right = "0";
+        }
+      } catch(_) {}
+    };
+    // expose for update phase
+    element._btqi_placeTooltip = placeTooltip;
+    window.addEventListener("resize", placeTooltip);
   },
 
   updateAsync: function (data, element, config, queryResponse, details, done) {
@@ -167,7 +186,6 @@ looker.plugins.visualizations.add({
       const fieldName = config.value_field || (queryResponse.fields.measure_like[0]?.name);
       if (!fieldName) throw new Error("Select a BTQI field in the visualization options.");
 
-      // Handle multi-row modes
       const getScore = () => {
         if (!data || data.length === 0) return null;
         if (config.multirow_mode === "avg" && data.length > 1) {
@@ -186,7 +204,6 @@ looker.plugins.visualizations.add({
       };
       const v = getScore();
 
-      // Band mapping
       const band = (s) => {
         if (s == null) return {name:"N/A", color:"#9ca3af", desc:"No data."};
         if (s < 3)        return {name:"Poor",      color:"#e74c3c", desc:"Weak traffic: low engagement and almost no conversions."};
@@ -197,25 +214,13 @@ looker.plugins.visualizations.add({
       };
       const b = band(v);
 
-      // Helpers
-      const hexToRgb = (hex) => {
-        const h = hex.replace('#','');
-        const int = parseInt(h.length===3 ? h.split('').map(c=>c+c).join('') : h, 16);
-        return { r:(int>>16)&255, g:(int>>8)&255, b:int&255 };
-      };
-      const luminance = ({r,g,b}) => {
-        const a=[r,g,b].map(v=>{ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); });
-        return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
-      };
-      const getContrastText = (hex) => luminance(hexToRgb(hex)) > 0.6 ? "#111827" : "#ffffff";
-      const mix = (hex, pct=0.85) => { // toward white for "tint"
-        const {r,g,b}=hexToRgb(hex);
-        const m=(c)=>Math.round(c+(255-c)*pct);
-        const toHex=(n)=>n.toString(16).padStart(2,"0");
-        return `#${toHex(m(r))}${toHex(m(g))}${toHex(m(b))}`;
-      };
+      // helpers
+      const hexToRgb = (hex) => { const h=hex.replace('#',''); const i=parseInt(h.length===3?h.split('').map(c=>c+c).join(''):h,16); return {r:(i>>16)&255,g:(i>>8)&255,b:i&255}; };
+      const luminance = ({r,g,b}) => { const a=[r,g,b].map(v=>{ v/=255; return v<=.03928? v/12.92 : Math.pow((v+.055)/1.055,2.4)}); return .2126*a[0]+.7152*a[1]+.0722*a[2]; };
+      const contrastText = (hex) => luminance(hexToRgb(hex)) > .6 ? "#111827" : "#ffffff";
+      const mix = (hex, pct=.85)=>{ const {r,g,b}=hexToRgb(hex); const m=c=>Math.round(c+(255-c)*pct); const toH=n=>n.toString(16).padStart(2,"0"); return `#${toH(m(r))}${toH(m(g))}${toH(m(b))}`; };
 
-      // Elements
+      // elements
       const header   = element.querySelector("#btqi-header");
       const inner    = element.querySelector("#btqi-inner");
       const card     = element.querySelector("#btqi-card");
@@ -225,62 +230,40 @@ looker.plugins.visualizations.add({
       const labelEl  = element.querySelector("#btqi-label");
       const tip      = element.querySelector("#btqi-tip");
 
-      // Internal header toggle
       header.style.display = config.show_header ? "block" : "none";
       header.textContent   = config.header_text || "Traffic Quality Score";
 
-      // Alignment + value size
       inner.classList.toggle("left", config.align === "left");
       valueEl.classList.remove("s","m","l");
       valueEl.classList.add(config.value_size || "m");
 
-      // Background fill, corner radius, contrast
       const bg = (config.fill_mode === "tint") ? mix(b.color, 0.88) : b.color;
-      const textColor = getContrastText(bg);
-      card.style.background = bg;
+      const textColor = contrastText(bg);
+      card.style.background   = bg;
       card.style.borderRadius = (config.corner_radius ?? 12) + "px";
-      card.style.color = textColor;
+      card.style.color        = textColor;
 
-      // Band row & dot
       if (config.show_band_text !== false) {
         bandRow.style.display = "inline-flex";
-        labelEl.textContent = `${b.name} Traffic Quality`;
-        // glossy dot color
-        const glossy = `radial-gradient(100% 100% at 35% 30%, rgba(255,255,255,.9), rgba(255,255,255,.15) 45%), ${b.color}`;
-        dot.style.background = glossy;
-        dot.style.boxShadow = textColor === "#ffffff"
+        labelEl.textContent   = `${b.name} Traffic Quality`;
+        dot.style.background  = `radial-gradient(100% 100% at 35% 30%, rgba(255,255,255,.9), rgba(255,255,255,.15) 45%), ${b.color}`;
+        dot.style.boxShadow   = textColor === "#ffffff"
           ? "inset 0 2px 3px rgba(0,0,0,.15), 0 0 0 2px rgba(255,255,255,.35)"
           : "inset 0 2px 3px rgba(0,0,0,.15), 0 0 0 2px rgba(0,0,0,.15)";
       } else {
         bandRow.style.display = "none";
       }
 
-      // Value
       valueEl.textContent = (v==null ? "–" : v.toFixed(1));
 
-      // Tooltip copy
       tip.innerHTML = `<b>BTQI (0–10)</b><br/>
         Calculated from <i>Leads per Session × (Engagement ÷ Bounce)</i> and scaled so “Excellent” is rare and meaningful.<br/><br/>
         <b>Band:</b> ${b.name}<br/>${b.desc}`;
 
-      // Attempt to hide Looker tile title bar
-try {
-  const style = document.createElement("style");
-  style.innerHTML = `
-    .vis-name, .tile-title, .looker-tile-title {
-      display: none !important;
-      height: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-    }
-  `;
-  if (parent && parent.document && parent.document.head) {
-    parent.document.head.appendChild(style);
-  }
-} catch (err) {
-  console.warn("Could not inject style into parent — sandboxed iframe.");
-}
-
+      // place/flip tooltip after render
+      if (typeof element._btqi_placeTooltip === "function") {
+        element._btqi_placeTooltip();
+      }
 
       done();
     } catch (e) {
