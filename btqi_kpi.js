@@ -125,7 +125,7 @@ looker.plugins.visualizations.add({
         }
         .bubble{
           display:none; position:absolute; left:0; top:18px;
-          width:420px; max-width:calc(100vw - 64px); max-height:60vh; overflow:auto;
+          width:420px; max-width:calc(100vw - 64px);
           background:#111827; color:#fff; border-radius:10px; padding:12px 14px;
           box-shadow:0 16px 36px rgba(0,0,0,.25); font-size:13px; line-height:1.35;
         }
