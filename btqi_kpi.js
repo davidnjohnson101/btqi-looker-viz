@@ -1,8 +1,9 @@
-// btqi_kpi.js
+// btqi_kpi.js  — Full-bleed KPI with robust options
 looker.plugins.visualizations.add({
   id: "btqi_kpi",
-  label: "BTQI KPI with Tooltip",
+  label: "BTQI KPI",
   options: {
+    // DATA
     value_field: {
       section: "Data",
       label: "BTQI Field",
@@ -12,6 +13,32 @@ looker.plugins.visualizations.add({
         qr.fields.measure_like.concat(qr.fields.dimension_like)
           .reduce((o,f)=> (o[f.name]=f.label || f.name, o), {}),
       default: ""
+    },
+    multirow_mode: {
+      section: "Data",
+      label: "If multiple rows",
+      type: "string",
+      display: "select",
+      values: [{ "Use first row": "first" }, { "Average the field": "avg" }],
+      default: "first"
+    },
+
+    // APPEARANCE
+    align: {
+      section: "Appearance",
+      label: "Alignment",
+      type: "string",
+      display: "select",
+      values: [{ "Center": "center" }, { "Left": "left" }],
+      default: "center"
+    },
+    value_size: {
+      section: "Appearance",
+      label: "Value Size",
+      type: "string",
+      display: "select",
+      values: [{ "S": "s" }, { "M": "m" }, { "L": "l" }],
+      default: "m"
     },
     show_header: {
       section: "Appearance",
@@ -32,69 +59,107 @@ looker.plugins.visualizations.add({
       display: "select",
       values: [{ "Solid band color": "solid" }, { "Subtle tint": "tint" }],
       default: "solid"
+    },
+    corner_radius: {
+      section: "Appearance",
+      label: "Corner Radius (px)",
+      type: "number",
+      default: 12
+    },
+    show_band_text: {
+      section: "Appearance",
+      label: "Show Band Text",
+      type: "boolean",
+      default: true
     }
   },
 
   create: function (element, config) {
     element.innerHTML = `
       <style>
-        .btqi-wrap { width:100%; height:100%; }
+        /* Make the viz fill the iframe */
+        .btqi-root { position:absolute; inset:0; width:100%; height:100%; }
+
+        /* Optional internal header (since native title toggle may be missing) */
         .btqi-header{
           font-weight:700; letter-spacing:.2px; text-align:center;
-          margin: 6px 0 12px 0; opacity:.9;
+          margin: 4px 0 8px 0; opacity:.9;
         }
-        .btqi-card {
-  position: absolute; 
-  top: 0; left: 0; right: 0; bottom: 0;
-  width: 100%; height: 100%;
-  box-sizing: border-box;
-  display: flex; 
-  flex-direction: column; 
-  align-items: center; 
-  justify-content: center;
 
-  /* Remove padding and rounded corners so it fills tile */
-  border-radius: 0; 
-  padding: 0;
-}
-        .btqi-value{
-          font-size: clamp(40px, 8vw, 64px);
-          line-height:1; font-weight:800; letter-spacing:.3px;
-          margin-bottom:10px;
+        /* Full-bleed card fills the whole tile */
+        .btqi-card{
+          position:absolute; inset:0;
+          width:100%; height:100%;
+          box-sizing:border-box;
+          display:flex; flex-direction:column; align-items:center; justify-content:center;
         }
-        .btqi-band{ display:inline-flex; align-items:center; gap:10px; font-size:18px; font-weight:600; }
-        .dot{ width:12px; height:12px; border-radius:50%; border:2px solid rgba(0,0,0,.18) }
-        .info{ position:absolute; top:12px; right:12px; cursor:default; }
-        .info .bubble{
-          display:none; position:absolute; right:0; top:26px; width:300px;
-          background:#111827; color:#fff; border-radius:10px; padding:12px 14px;
-          box-shadow:0 16px 36px rgba(0,0,0,.25); z-index:5; font-size:13px; line-height:1.35;
+        .btqi-inner{
+          width:100%;
+          display:flex; flex-direction:column; align-items:center; gap:10px;
         }
-        .info:hover .bubble{ display:block; }
+        .btqi-inner.left { align-items:flex-start; padding-left:24px; }
+        .value{
+          line-height:1; font-weight:800; letter-spacing:.3px; margin:0;
+        }
+        .value.s { font-size: clamp(36px, 6vw, 48px); }
+        .value.m { font-size: clamp(44px, 7.5vw, 64px); }
+        .value.l { font-size: clamp(52px, 9vw, 80px); }
+
+        .band{
+          display:inline-flex; align-items:center; gap:10px;
+          font-size:18px; font-weight:700;
+        }
+
+        /* glossy dot (works on any background) */
+        .dot{
+          width:14px; height:14px; border-radius:50%;
+          box-shadow: inset 0 2px 3px rgba(0,0,0,.15), 0 0 0 2px rgba(0,0,0,.12);
+          background: radial-gradient( 100% 100% at 35% 30%, rgba(255,255,255,.9), rgba(255,255,255,.1) 45%), #999;
+        }
+
+        /* Tooltip with mobile tap support (see JS) */
+        .info{ position:absolute; top:10px; right:10px; }
         .info .i{
           width:22px; height:22px; border-radius:50%;
           background:rgba(255,255,255,.85); color:#111827;
           display:flex; align-items:center; justify-content:center;
           font-size:12px; font-weight:800;
-          box-shadow:0 2px 6px rgba(0,0,0,.15);
+          box-shadow:0 2px 6px rgba(0,0,0,.15); cursor:default;
         }
+        .bubble{
+          display:none; position:absolute; right:0; top:28px; width:310px;
+          background:#111827; color:#fff; border-radius:10px; padding:12px 14px;
+          box-shadow:0 16px 36px rgba(0,0,0,.25); z-index:5; font-size:13px; line-height:1.35;
+        }
+        .info.open .bubble { display:block; }
       </style>
 
-      <div class="btqi-wrap">
+      <div class="btqi-root">
         <div class="btqi-header" id="btqi-header" style="display:none;"></div>
-        <div class="btqi-card" aria-label="Traffic Quality Score card">
-          <div class="info" aria-hidden="true">
+        <div class="btqi-card" id="btqi-card" aria-label="Traffic Quality Score card">
+          <div class="info" id="btqi-info" aria-hidden="true">
             <div class="i">i</div>
             <div class="bubble" id="btqi-tip"></div>
           </div>
-          <div class="btqi-value" id="btqi-value">–</div>
-          <div class="btqi-band" id="btqi-band">
-            <div class="dot" id="btqi-dot"></div>
-            <div id="btqi-label">–</div>
+          <div class="btqi-inner" id="btqi-inner">
+            <h1 class="value m" id="btqi-value">–</h1>
+            <div class="band" id="btqi-band" style="display:none;">
+              <div class="dot" id="btqi-dot"></div>
+              <div id="btqi-label">–</div>
+            </div>
           </div>
         </div>
       </div>
     `;
+
+    // Mobile-friendly tooltip: click to toggle
+    const info = element.querySelector("#btqi-info");
+    info.addEventListener("click", (e) => {
+      e.stopPropagation();
+      info.classList.toggle("open");
+    });
+    // Close on outside click
+    document.addEventListener("click", () => info.classList.remove("open"));
   },
 
   updateAsync: function (data, element, config, queryResponse, details, done) {
@@ -102,11 +167,26 @@ looker.plugins.visualizations.add({
       const fieldName = config.value_field || (queryResponse.fields.measure_like[0]?.name);
       if (!fieldName) throw new Error("Select a BTQI field in the visualization options.");
 
-      const cell  = data[0]?.[fieldName];
-      const score = typeof cell?.value === "number" ? cell.value : parseFloat(cell?.value);
-      const v     = isFinite(score) ? score : null;
+      // Handle multi-row modes
+      const getScore = () => {
+        if (!data || data.length === 0) return null;
+        if (config.multirow_mode === "avg" && data.length > 1) {
+          const vals = data.map(r => {
+            const cell = r?.[fieldName];
+            const n = typeof cell?.value === "number" ? cell.value : parseFloat(cell?.value);
+            return isFinite(n) ? n : null;
+          }).filter(v => v !== null);
+          if (!vals.length) return null;
+          return vals.reduce((a,b)=>a+b,0) / vals.length;
+        } else {
+          const cell = data[0]?.[fieldName];
+          const n = typeof cell?.value === "number" ? cell.value : parseFloat(cell?.value);
+          return isFinite(n) ? n : null;
+        }
+      };
+      const v = getScore();
 
-      // band mapping
+      // Band mapping
       const band = (s) => {
         if (s == null) return {name:"N/A", color:"#9ca3af", desc:"No data."};
         if (s < 3)        return {name:"Poor",      color:"#e74c3c", desc:"Weak traffic: low engagement and almost no conversions."};
@@ -117,7 +197,7 @@ looker.plugins.visualizations.add({
       };
       const b = band(v);
 
-      // utils
+      // Helpers
       const hexToRgb = (hex) => {
         const h = hex.replace('#','');
         const int = parseInt(h.length===3 ? h.split('').map(c=>c+c).join('') : h, 16);
@@ -128,41 +208,57 @@ looker.plugins.visualizations.add({
         return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2];
       };
       const getContrastText = (hex) => luminance(hexToRgb(hex)) > 0.6 ? "#111827" : "#ffffff";
-      const mix = (hex, pct=0.85) => { // lighten toward white
+      const mix = (hex, pct=0.85) => { // toward white for "tint"
         const {r,g,b}=hexToRgb(hex);
         const m=(c)=>Math.round(c+(255-c)*pct);
         const toHex=(n)=>n.toString(16).padStart(2,"0");
         return `#${toHex(m(r))}${toHex(m(g))}${toHex(m(b))}`;
       };
 
-      // elements
-      const wrap  = element.querySelector(".btqi-wrap");
-      const header= element.querySelector("#btqi-header");
-      const card  = element.querySelector(".btqi-card");
-      const value = element.querySelector("#btqi-value");
-      const dot   = element.querySelector("#btqi-dot");
-      const label = element.querySelector("#btqi-label");
-      const tip   = element.querySelector("#btqi-tip");
-      const bandRow = element.querySelector("#btqi-band");
+      // Elements
+      const header   = element.querySelector("#btqi-header");
+      const inner    = element.querySelector("#btqi-inner");
+      const card     = element.querySelector("#btqi-card");
+      const valueEl  = element.querySelector("#btqi-value");
+      const dot      = element.querySelector("#btqi-dot");
+      const bandRow  = element.querySelector("#btqi-band");
+      const labelEl  = element.querySelector("#btqi-label");
+      const tip      = element.querySelector("#btqi-tip");
 
-      // header toggle
+      // Internal header toggle
       header.style.display = config.show_header ? "block" : "none";
       header.textContent   = config.header_text || "Traffic Quality Score";
 
-      // fill style
-      const mode = (config.fill_mode || "solid");
-      const bg   = mode === "solid" ? b.color : mix(b.color, 0.88); // subtle tint option
-      const text = getContrastText(bg);
+      // Alignment + value size
+      inner.classList.toggle("left", config.align === "left");
+      valueEl.classList.remove("s","m","l");
+      valueEl.classList.add(config.value_size || "m");
 
-      // apply
+      // Background fill, corner radius, contrast
+      const bg = (config.fill_mode === "tint") ? mix(b.color, 0.88) : b.color;
+      const textColor = getContrastText(bg);
       card.style.background = bg;
-      card.style.color = text;
-      dot.style.borderColor = text === "#ffffff" ? "rgba(255,255,255,.65)" : "rgba(0,0,0,.18)";
-      dot.style.background  = text === "#ffffff" ? "rgba(255,255,255,.92)" : b.color;
-      bandRow.style.color   = text;
+      card.style.borderRadius = (config.corner_radius ?? 12) + "px";
+      card.style.color = textColor;
 
-      value.textContent = (v==null ? "–" : v.toFixed(1));
-      label.textContent = `${b.name} Traffic Quality`;
+      // Band row & dot
+      if (config.show_band_text !== false) {
+        bandRow.style.display = "inline-flex";
+        labelEl.textContent = `${b.name} Traffic Quality`;
+        // glossy dot color
+        const glossy = `radial-gradient(100% 100% at 35% 30%, rgba(255,255,255,.9), rgba(255,255,255,.15) 45%), ${b.color}`;
+        dot.style.background = glossy;
+        dot.style.boxShadow = textColor === "#ffffff"
+          ? "inset 0 2px 3px rgba(0,0,0,.15), 0 0 0 2px rgba(255,255,255,.35)"
+          : "inset 0 2px 3px rgba(0,0,0,.15), 0 0 0 2px rgba(0,0,0,.15)";
+      } else {
+        bandRow.style.display = "none";
+      }
+
+      // Value
+      valueEl.textContent = (v==null ? "–" : v.toFixed(1));
+
+      // Tooltip copy
       tip.innerHTML = `<b>BTQI (0–10)</b><br/>
         Calculated from <i>Leads per Session × (Engagement ÷ Bounce)</i> and scaled so “Excellent” is rare and meaningful.<br/><br/>
         <b>Band:</b> ${b.name}<br/>${b.desc}`;
