@@ -263,6 +263,25 @@ looker.plugins.visualizations.add({
         Calculated from <i>Leads per Session × (Engagement ÷ Bounce)</i> and scaled so “Excellent” is rare and meaningful.<br/><br/>
         <b>Band:</b> ${b.name}<br/>${b.desc}`;
 
+      // Attempt to hide Looker tile title bar
+try {
+  const style = document.createElement("style");
+  style.innerHTML = `
+    .vis-name, .tile-title, .looker-tile-title {
+      display: none !important;
+      height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+  `;
+  if (parent && parent.document && parent.document.head) {
+    parent.document.head.appendChild(style);
+  }
+} catch (err) {
+  console.warn("Could not inject style into parent — sandboxed iframe.");
+}
+
+
       done();
     } catch (e) {
       console.error(e);
