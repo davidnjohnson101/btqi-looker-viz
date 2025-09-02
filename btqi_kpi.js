@@ -80,7 +80,7 @@ looker.plugins.visualizations.add({
         .btqi-root { position:absolute; inset:0; width:100%; height:100%; }
 
         .btqi-header{
-          font-weight:700; font-family: "Google Sans", "Noto Sans", "Noto Sans JP", "Noto Sans CJK KR", "Noto Sans Arabic UI", "Noto Sans Devanagari UI", "Noto Sans Hebrew", "Noto Sans Thai UI", Helvetica, Arial, sans-serif; letter-spacing:.2px; text-align:center;
+          font-weight:700; letter-spacing:.2px; text-align:center;
           margin: 4px 0 8px 0; opacity:.9;
         }
 
@@ -97,7 +97,7 @@ looker.plugins.visualizations.add({
         }
         .btqi-inner.left { align-items:flex-start; padding-left:24px; }
 
-        .value{ line-height:1; font-weight:800; letter-spacing:.3px; margin:0; }
+        .value{ line-height:1; font-weight:800; font-family: "Google Sans", "Noto Sans", "Noto Sans JP", "Noto Sans CJK KR", "Noto Sans Arabic UI", "Noto Sans Devanagari UI", "Noto Sans Hebrew", "Noto Sans Thai UI", Helvetica, Arial, sans-serif; letter-spacing:.3px; margin:0; }
         .value.s { font-size: clamp(36px, 6vw, 48px); }
         .value.m { font-size: clamp(44px, 7.5vw, 64px); }
         .value.l { font-size: clamp(52px, 9vw, 80px); }
