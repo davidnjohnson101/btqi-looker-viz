@@ -97,15 +97,34 @@ looker.plugins.visualizations.add({
         }
         .btqi-inner.left { align-items:flex-start; padding-left:24px; }
 
-        .value{ line-height:1; font-weight:600; font-family: "Google Sans", "Noto Sans", "Noto Sans JP", "Noto Sans CJK KR", "Noto Sans Arabic UI", "Noto Sans Devanagari UI", "Noto Sans Hebrew", "Noto Sans Thai UI", Helvetica, Arial, sans-serif; letter-spacing:normal; margin:0; }
+        .value {
+  line-height: 1.1; 
+  font-weight: 600;                /* match Looker native weight */
+  font-family: "Google Sans", "Noto Sans", "Noto Sans JP", "Noto Sans CJK KR",
+               "Noto Sans Arabic UI", "Noto Sans Devanagari UI",
+               "Noto Sans Hebrew", "Noto Sans Thai UI",
+               Helvetica, Arial, sans-serif !important;
+  letter-spacing: normal;          /* no extra spacing */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
         .value.s { font-size: clamp(36px, 6vw, 48px); }
         .value.m { font-size: clamp(44px, 7.5vw, 64px); }
         .value.l { font-size: clamp(52px, 9vw, 80px); }
 
-        .band{
-          display:inline-flex; align-items:center; gap:10px;
-          font-size:18px; font-weight:700;
-        }
+       .band {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;                 /* slightly smaller than value */
+  font-weight: 500;                /* lighter, consistent with Looker */
+  font-family: "Google Sans", "Noto Sans", "Noto Sans JP", "Noto Sans CJK KR",
+               "Noto Sans Arabic UI", "Noto Sans Devanagari UI",
+               "Noto Sans Hebrew", "Noto Sans Thai UI",
+               Helvetica, Arial, sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
         /* glossy dot */
         .dot{
