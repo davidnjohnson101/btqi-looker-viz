@@ -34,13 +34,15 @@ looker.plugins.visualizations.add({
     sub_size_px: { section: "Layout", type: "number", label: "Subtext Font Size (px)", default: 14 }
   },
 
-  create(el) {
-    el.innerHTML = `
-      <div id="svd-wrap" style="font-family:inherit;padding:12px;">
-        <div id="svd-big" style="font-weight:700;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
-        <div id="svd-sub" style="margin-top:6px;"></div>
-      </div>`;
-  },
+create(el) {
+  el.innerHTML = `
+    <div id="svd-wrap"
+         style="font-family:inherit;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;width:100%;height:100%;">
+      <div id="svd-big" style="font-weight:700;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+      <div id="svd-sub" style="margin-top:6px;"></div>
+    </div>`;
+},
+
 
   updateAsync(data, el, config, queryResponse, details, done) {
     try {
@@ -205,15 +207,13 @@ looker.plugins.visualizations.add({
       bigEl.style.fontSize = (config.big_size_px || 64) + "px";
       subEl.style.fontSize = (config.sub_size_px || 14) + "px";
 
-      const label = (config.metric_label || m0.label || m0.label_short || m0.name);
-      const big   = (config.format_mode === "percent") ? nf(currVal, true) : nf(currVal, false) + (config.suffix || "");
-      bigEl.textContent = big;
+      const userLabel = (config.metric_label ?? "").trim();
+const autoLabel = (m0.label || m0.label_short || m0.name || "").trim();
+const label = userLabel.length ? userLabel : autoLabel; // show user label if provided
+const labelHtml = label.length ? ` • ${label}` : "";    // hide bullet if empty
 
-      const compareLabel = (config.compare_mode === "prev_year")
-        ? "vs previous year" : (config.compare_mode === "mtd_daymatch" ? "vs prior MTD" : "vs previous period");
-      const deltaTxt = (delta == null) ? "n/a" : nf(delta, true);
-
-      subEl.innerHTML = `<span style="color:${color};">${arrow} ${deltaTxt}</span> ${compareLabel}  ${label}`;
+subEl.innerHTML =
+  `<span style="color:${color};">${arrow} ${deltaTxt}</span> ${compareLabel}${labelHtml}`;
 
       done();
     } catch (e) {
