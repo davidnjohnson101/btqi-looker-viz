@@ -202,23 +202,35 @@ create(el) {
       };
 
       // ---------- Render ----------
-      const bigEl = el.querySelector("#svd-big");
-      const subEl = el.querySelector("#svd-sub");
-      bigEl.style.fontSize = (config.big_size_px || 64) + "px";
-      subEl.style.fontSize = (config.sub_size_px || 14) + "px";
+// ---------- Render ----------
+const bigEl = el.querySelector("#svd-big");
+const subEl = el.querySelector("#svd-sub");
+bigEl.style.fontSize = (config.big_size_px || 64) + "px";
+subEl.style.fontSize = (config.sub_size_px || 14) + "px";
 
-      const userLabel = (config.metric_label ?? "").trim();
+// Build big value text
+const big = (config.format_mode === "percent")
+  ? nf(currVal, true)                     // show % directly (e.g., CTR)
+  : nf(currVal, false) + (config.suffix || "");
+
+// Comparison label + delta text
+const compareLabel = (config.compare_mode === "prev_year")
+  ? "vs previous year"
+  : (config.compare_mode === "mtd_daymatch" ? "vs prior MTD" : "vs previous period");
+const deltaTxt = (delta == null) ? "n/a" : nf(delta, true);
+
+// Optional trailing label (hide bullet if empty)
+const userLabel = (config.metric_label ?? "").trim();
 const autoLabel = (m0.label || m0.label_short || m0.name || "").trim();
-const label = userLabel.length ? userLabel : autoLabel; // show user label if provided
-const labelHtml = label.length ? ` • ${label}` : "";    // hide bullet if empty
+const label = userLabel.length ? userLabel : autoLabel;
+const labelHtml = label.length ? ` • ${label}` : "";
 
-subEl.innerHTML =
-  `<span style="color:${color};">${arrow} ${deltaTxt}</span> ${compareLabel}${labelHtml}`;
+// Write to DOM
+bigEl.textContent = big;
+subEl.innerHTML = `<span style="color:${color};">${arrow} ${deltaTxt}</span> ${compareLabel}${labelHtml}`;
 
-      done();
-    } catch (e) {
-      this.addError({title:"Runtime error", message:String(e)});
-      done();
+done();
+
     }
   }
 });
