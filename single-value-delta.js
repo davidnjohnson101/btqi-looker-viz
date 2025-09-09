@@ -226,4 +226,4 @@ updateAsync(data, el, config, queryResponse, details, done) {
     done();
   }
 }
-
+});
