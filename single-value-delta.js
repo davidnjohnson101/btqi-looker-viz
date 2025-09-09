@@ -1,4 +1,4 @@
-/* Single Value + Δ% (Prev Period / Prior Year / MTD) — Looker Custom Viz */
+/* Single Value + Δ% (Prev Period / Prior Year / MTD) — Looker Custom Viz (refined) */
 looker.plugins.visualizations.add({
   id: "sv_delta_plus",
   label: "Single Value KPI + Δ%",
@@ -34,30 +34,39 @@ looker.plugins.visualizations.add({
     sub_size_px: { section: "Layout", type: "number", label: "Subtext Font Size (px)", default: 14 }
   },
 
-create(el) {
-  el.innerHTML = `
-    <div id="svd-wrap"
-         style="font-family:inherit;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;width:100%;height:100%;">
-      <div id="svd-big" style="font-weight:700;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
-      <div id="svd-sub" style="margin-top:6px;"></div>
-    </div>`;
-},
-
+  create(el) {
+    el.innerHTML = `
+      <div id="svd-wrap" style="font-family:inherit;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;width:100%;height:100%;">
+        <div id="svd-big" style="font-weight:700;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;"></div>
+        <div id="svd-sub" style="margin-top:6px;max-width:100%;"></div>
+      </div>`;
+  },
 
   updateAsync(data, el, config, queryResponse, details, done) {
+    // --- error helper that throws; catch handles UI + done() once ---
+    const err = (m) => { const e = new Error(String(m)); e.name = "ConfigError"; throw e; };
+
     try {
       this.clearErrors();
 
-      // ---------- Utilities ----------
-      const err = (m)=>{ this.addError({title:"Configuration error", message:String(m)}); done(); throw m; };
+      // Disallow pivots (simplifies row handling). Extend if needed.
+      if (queryResponse && queryResponse.pivots && queryResponse.pivots.length) {
+        err("Pivoted queries aren’t supported in this visualization.");
+      }
 
-      const getCell = (row, fieldName) => row && row[fieldName];
+      // ---------- Utilities ----------
+      const getCell = (row, fieldName) => (row && row[fieldName]);
       const valOf   = (cell) => (cell == null ? null : (typeof cell === "object" && "value" in cell ? cell.value : cell));
-      const numOf   = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+      const numOf   = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
       const dateOf  = (v) => {
         if (v instanceof Date) return isNaN(v) ? null : v;
         if (typeof v === "number") {
-          const d = new Date(v > 1e12 ? v : v * 1000);
+          const n = Math.trunc(v);
+          // microseconds > 1e14, milliseconds > 1e11 (covers pre-2004 ms epochs), else seconds
+          const d = n > 1e14 ? new Date(n / 1000) : (n > 1e11 ? new Date(n) : new Date(n * 1000));
           return isNaN(d) ? null : d;
         }
         if (v == null) return null;
@@ -65,7 +74,7 @@ create(el) {
         return isNaN(d) ? null : d;
       };
 
-      const DAY   = 24 * 3600 * 1000;
+      const DAY = 24 * 3600 * 1000;
       const addDays = (d, n) => new Date(d.getTime() + n * DAY);
 
       // ---------- Field selection ----------
@@ -77,6 +86,7 @@ create(el) {
       if (!measures.length) err("Add at least one measure.");
 
       const byName = (name)=> measures.find(m => m.name === name || m.label_short === name);
+
       const m0 = config.measure_0_name ? byName(config.measure_0_name) : measures[0];
       if (!m0) err("Primary measure not found. Check 'Primary Measure Name'.");
 
@@ -105,21 +115,34 @@ create(el) {
       if (!rows.length) err("No dated rows in selection (after removing totals).");
 
       // ---------- Infer grain (day / week / month) ----------
+      const grainFromField = () => {
+        const n = (timeField && (timeField.name || "")).toLowerCase();
+        if (n.includes("month")) return "month";
+        if (n.includes("week"))  return "week";
+        return "day";
+      };
       const inferGrain = () => {
-        if (rows.length < 2) return "day";
-        const ms = rows[rows.length-1].d - rows[rows.length-2].d; // avoid .at()
-        if (Math.abs(ms - 7*DAY) < 3*DAY) return "week";
-        if (Math.abs(ms) > 25*DAY) return "month";
+        if (rows.length < 2) return grainFromField();
+        const last = rows[rows.length - 1].d;
+        const prev = rows[rows.length - 2].d;
+        const ms = last - prev;
+        if (Math.abs(ms - 7 * DAY) < 3 * DAY) return "week";
+        if (Math.abs(ms) > 25 * DAY) return "month";
         return "day";
       };
       const grain = inferGrain();
 
       // ---------- Window helpers ----------
-      const start = rows[0].d, end = rows[rows.length-1].d;
+      const start = rows[0].d, end = rows[rows.length - 1].d;
+
       const unitsInWindow = (() => {
-        if (grain === "week") return Math.max(1, Math.round(((end - start)/DAY + 1) / 7));
-        if (grain === "month") return Math.max(1, (end.getFullYear() - start.getFullYear())*12 + (end.getMonth() - start.getMonth()) + 1);
-        return Math.floor((end - start)/DAY) + 1;
+        if (grain === "week") {
+          return Math.max(1, Math.round(((end - start) / DAY + 1) / 7));
+        }
+        if (grain === "month") {
+          return Math.max(1, (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1);
+        }
+        return Math.floor((end - start) / DAY) + 1;
       })();
 
       const sumRange = (s, e) => {
@@ -139,11 +162,12 @@ create(el) {
       const sameSpanBack = () => {
         if (grain === "week") {
           prevEnd   = addDays(currStart, -1);
-          prevStart = addDays(prevEnd, -7*unitsInWindow + 1);
+          prevStart = addDays(prevEnd, -7 * unitsInWindow + 1);
         } else if (grain === "month") {
+          // last day of the prior month
           prevEnd   = new Date(currStart.getFullYear(), currStart.getMonth(), 0);
-          const sMo = new Date(currStart.getFullYear(), currStart.getMonth() - (unitsInWindow - 1), 1);
-          prevStart = new Date(sMo.getFullYear(), sMo.getMonth(), 1);
+          // first day of the month exactly `unitsInWindow` months back
+          prevStart = new Date(currStart.getFullYear(), currStart.getMonth() - unitsInWindow, 1);
         } else {
           prevEnd   = addDays(currStart, -1);
           prevStart = addDays(prevEnd, -(unitsInWindow - 1));
@@ -158,7 +182,7 @@ create(el) {
       const mtdDayMatched = () => {
         const looksMTD = currStart.getDate() === 1;
         if (!looksMTD) return sameSpanBack();
-        const dayCount = Math.floor((currEnd - currStart)/DAY) + 1;
+        const dayCount = Math.floor((currEnd - currStart) / DAY) + 1;
         const prevMonthStart = new Date(currStart.getFullYear(), currStart.getMonth()-1, 1);
         const prevMonthEnd   = new Date(currStart.getFullYear(), currStart.getMonth(), 0);
         prevStart = prevMonthStart;
@@ -178,59 +202,68 @@ create(el) {
       // ---------- Delta & colors ----------
       const delta = (prevVal === null || prevVal === 0 || currVal === null) ? null : ((currVal - prevVal) / prevVal);
       const arrow = (delta == null) ? "" : (delta > 0 ? "▲" : (delta < 0 ? "▼" : "•"));
-      const isGood = delta > 0 ? !config.positive_is_bad : config.positive_is_bad;
-      const color  = (delta == null) ? (config.neutral_color || "#64748B")
-                    : (isGood ? (config.good_color || "#1a7f37") : (config.bad_color || "#d33"));
+
+      const isNeutral = delta == null || delta === 0;
+      const color = isNeutral
+        ? (config.neutral_color || "#64748B")
+        : (((delta > 0) !== !!config.positive_is_bad)
+            ? (config.good_color || "#1a7f37")
+            : (config.bad_color  || "#d33"));
 
       // ---------- Formatting ----------
       const formatNumber = (val, d, compact) => {
-        const abs = Math.abs(val), sign = val < 0 ? "-" : "";
+        const abs = Math.abs(val);
         const fmt = (n) => n.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-        if (!compact) return sign + fmt(abs);
-        if (abs >= 1e9) return sign + (abs/1e9).toFixed(d) + "B";
-        if (abs >= 1e6) return sign + (abs/1e6).toFixed(d) + "M";
-        if (abs >= 1e3) return sign + (abs/1e3).toFixed(d) + "K";
-        return sign + fmt(abs);
+        if (!compact) return fmt(abs);
+        if (abs >= 1e9) return (abs/1e9).toFixed(d) + "B";
+        if (abs >= 1e6) return (abs/1e6).toFixed(d) + "M";
+        if (abs >= 1e3) return (abs/1e3).toFixed(d) + "K";
+        return fmt(abs);
       };
       const nf = (val, asPercent) => {
         if (val == null) return "n/a";
-        const d = Number.isFinite(config.decimals) ? Math.max(0, config.decimals) : 1;
+        const d = Number.isFinite(Number(config.decimals)) ? Math.max(0, Number(config.decimals)) : 1;
         if (asPercent || config.format_mode === "percent") return (val * 100).toFixed(d) + "%";
         const compact = !!config.compact;
-        if (config.format_mode === "currency") return (config.currency_symbol || "$") + formatNumber(val, d, compact);
-        return formatNumber(val, d, compact);
+        if (config.format_mode === "currency") {
+          const sign = val < 0 ? "-" : "";
+          const body = formatNumber(val, d, compact); // formatNumber uses abs internally
+          const symbol = (config.currency_symbol || "$");
+          return sign + symbol + body;
+        }
+        const sign = val < 0 ? "-" : "";
+        return sign + formatNumber(val, d, !!config.compact);
       };
 
       // ---------- Render ----------
-// ---------- Render ----------
-const bigEl = el.querySelector("#svd-big");
-const subEl = el.querySelector("#svd-sub");
-bigEl.style.fontSize = (config.big_size_px || 64) + "px";
-subEl.style.fontSize = (config.sub_size_px || 14) + "px";
+      const bigEl = el.querySelector("#svd-big");
+      const subEl = el.querySelector("#svd-sub");
+      bigEl.style.fontSize = (config.big_size_px || 64) + "px";
+      subEl.style.fontSize = (config.sub_size_px || 14) + "px";
 
-// Build big value text
-const big = (config.format_mode === "percent")
-  ? nf(currVal, true)                     // show % directly (e.g., CTR)
-  : nf(currVal, false) + (config.suffix || "");
+      const big = (config.format_mode === "percent") ? nf(currVal, true) : nf(currVal, false) + (config.suffix || "");
+      bigEl.textContent = big;
 
-// Comparison label + delta text
-const compareLabel = (config.compare_mode === "prev_year")
-  ? "vs previous year"
-  : (config.compare_mode === "mtd_daymatch" ? "vs prior MTD" : "vs previous period");
-const deltaTxt = (delta == null) ? "n/a" : nf(delta, true);
+      const compareLabel = (config.compare_mode === "prev_year")
+        ? "vs previous year" : (config.compare_mode === "mtd_daymatch" ? "vs prior MTD" : "vs previous period");
+      const deltaTxt = (delta == null) ? "n/a" : nf(delta, true);
 
-// Optional trailing label (hide bullet if empty)
-const userLabel = (config.metric_label ?? "").trim();
-const autoLabel = (m0.label || m0.label_short || m0.name || "").trim();
-const label = userLabel.length ? userLabel : autoLabel;
-const labelHtml = label.length ? ` • ${label}` : "";
+      // Only show the metric label if the user provided one
+      const userLabel = (config.metric_label || "").trim();
+      const labelSuffix = userLabel.length ? ` • ${userLabel}` : "";
 
-// Write to DOM
-bigEl.textContent = big;
-subEl.innerHTML = `<span style="color:${color};">${arrow} ${deltaTxt}</span> ${compareLabel}${labelHtml}`;
+      // Safer DOM construction (no innerHTML interpolation for dynamic text)
+      subEl.innerHTML = "";
+      const deltaSpan = document.createElement("span");
+      deltaSpan.style.color = color;
+      deltaSpan.textContent = `${arrow} ${deltaTxt}`;
+      subEl.append(deltaSpan, ` ${compareLabel}${labelSuffix}`);
 
-done();
-
+      done();
+    } catch (e) {
+      const title = e && e.name === "ConfigError" ? "Configuration error" : "Runtime error";
+      this.addError({ title, message: String(e && (e.message || e)) });
+      done();
     }
   }
 });
