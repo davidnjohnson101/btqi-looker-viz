@@ -213,7 +213,7 @@ looker.plugins.visualizations.add({
         ? "vs previous year" : (config.compare_mode === "mtd_daymatch" ? "vs prior MTD" : "vs previous period");
       const deltaTxt = (delta == null) ? "n/a" : nf(delta, true);
 
-      subEl.innerHTML = `<span style="color:${color};">${arrow} ${deltaTxt}</span> ${compareLabel} • ${label}`;
+      subEl.innerHTML = `<span style="color:${color};">${arrow} ${deltaTxt}</span> ${compareLabel}  ${label}`;
 
       done();
     } catch (e) {
