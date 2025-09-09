@@ -165,15 +165,16 @@ looker.plugins.visualizations.add({
       if (config.calc_mode === "ratio_of_sums" && !m1) err("Ratio mode selected: supply a second measure.");
 
       // Extract rows -> [{d: Date, vals: {m0: number, m1?: number}}...] sorted asc
-      const rows = data.map(r => {
-        const dv = r[timeField.name]?.value;
-        const d = dv ? new Date(dv) : null;
-        const v0raw = r[m0.name]?.value;
-        const v1raw = m1 ? r[m1.name]?.value : null;
-        const v0 = (typeof v0raw === "number") ? v0raw : Number(v0raw);
-        const v1 = m1 ? ((typeof v1raw === "number") ? v1raw : Number(v1raw)) : null;
-        return (d && !isNaN(d) && isFinite(v0) && (m1 ? isFinite(v1) : true)) ? { d, v0, v1 } : null;
-      }).filter(Boolean).sort((a,b)=> a.d - b.d);
+const rows = data.map(r => {
+  // Ignore totals or null date rows
+  const dv = r[timeField.name]?.value;
+  if (!dv) return null;
+  const d = new Date(dv);
+  const v0 = Number(r[m0.name]?.value);
+  const v1 = m1 ? Number(r[m1.name]?.value) : null;
+  return (d instanceof Date && !isNaN(d)) ? { d, v0, v1 } : null;
+}).filter(Boolean).sort((a,b)=> a.d - b.d);
+
 
       if (!rows.length) err("No data rows in the selected date range.");
 
